@@ -1,108 +1,178 @@
 use phf::phf_map;
 
-// each token contains a type (tag), start index, and end index in the source string
+use crate::lex::token::{Token, Tag, Loc};
 
-struct Token {
-    tag: Tag,
-    loc: Loc,
-}
+pub mod token {
+    // each token contains a type (tag), start index, and end index in the source string
+    pub struct Token {
+        pub tag: Tag,
+        pub loc: Loc,
+    }
 
-struct Loc {
-    start: u32,
-    end: u32,
-}
+    pub struct Loc {
+        pub start: u32,
+        pub end: u32,
+    }
 
-#[derive(Clone, Eq, PartialEq, Debug)]
-enum Tag {
-    // lexer flow control
-    Invalid,
-    Eof,
+    #[derive(Clone, Copy, Eq, PartialEq, Debug)]
+    pub enum Tag {
+        // lexer flow control
+        Invalid,
+        Eof,
 
-    Ident,
-    StrLit,
-    CharLit,
-    IntLit,
-    FloatLit,
+        Ident,
+        StrLit,
+        CharLit,
+        IntLit,
+        FloatLit,
 
-    // single character punctuation
-    // generic
-    Semi,
-    Colon,
-    Equal,
-    Period,
-    Comma,
-    Underscore,
-    // grouping
-    LeftParen,
-    RightParen,
-    LeftBracket,
-    RightBracket,
-    LeftBrace,
-    RightBrace,
-    // arithmetic
-    Plus,
-    Minus,
-    Asterisk,
-    Slash,
-    Percent,
-    // binary
-    Ampersand,
-    Pipe,
-    Caret,
-    Tilde,
-    // logical
-    Bang,
-    // comparison
-    LeftAngle,
-    RightAngle,
+        // single character punctuation
+        // generic
+        Semi,
+        Colon,
+        Equal,
+        Period,
+        Comma,
+        Underscore,
+        // grouping
+        LeftParen,
+        RightParen,
+        LeftBracket,
+        RightBracket,
+        LeftBrace,
+        RightBrace,
+        // arithmetic
+        Plus,
+        Minus,
+        Asterisk,
+        Slash,
+        Percent,
+        // binary
+        Ampersand,
+        Pipe,
+        Caret,
+        Tilde,
+        // logical
+        Bang,
+        // comparison
+        LeftAngle,
+        RightAngle,
 
-    // double character punctuation
-    // arithmetic
-    PlusEqual,
-    MinusEqual,
-    AsteriskEqual,
-    SlashEqual,
-    PercentEqual,
-    // binary
-    AmpersandEqual,
-    PipeEqual,
-    CaretEqual,
-    LeftAngleLeftAngle,
-    RightAngleRightAngle,
-    // logical
-    // comparison
-    EqualEqual,
-    LeftAngleEqual,
-    RightAngleEqual,
-    BangEqual,
+        // double character punctuation
+        // arithmetic
+        PlusEqual,
+        MinusEqual,
+        AsteriskEqual,
+        SlashEqual,
+        PercentEqual,
+        // binary
+        AmpersandEqual,
+        PipeEqual,
+        CaretEqual,
+        LeftAngleLeftAngle,
+        RightAngleRightAngle,
+        // logical
+        // comparison
+        EqualEqual,
+        LeftAngleEqual,
+        RightAngleEqual,
+        BangEqual,
 
-    // triple character punctuation
-    // binary
-    LeftAngleLeftAngleEqual,
-    RightAngleRightAngleEqual,
+        // triple character punctuation
+        // binary
+        LeftAngleLeftAngleEqual,
+        RightAngleRightAngleEqual,
 
-    // keywords
-    Use,
-    As,
-    Fn,
-    Return,
-    Let,
-    Mut,
-    Type,
-    If,
-    Else,
-    Yield,
-    Struct,
-    Enum,
-    Variant,
-    Defer,
-    For,
-    Break,
-    Or,
-    And,
-    Not,
-    True,
-    False,
+        // keywords
+        Use,
+        As,
+        Fn,
+        Return,
+        Let,
+        Mut,
+        Type,
+        If,
+        Else,
+        Yield,
+        Struct,
+        Enum,
+        Variant,
+        Defer,
+        For,
+        Break,
+        Or,
+        And,
+        Not,
+        True,
+        False,
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    pub struct Index(u32);
+
+    impl Index {
+        pub fn from(index: u32) -> Index {
+            Index(index)
+        }
+
+        pub fn value(&self) -> usize {
+            self.0 as usize
+        }
+    }
+
+    impl std::ops::Add<u32> for Index {
+        type Output = Index;
+
+        fn add(self, rhs: u32) -> Index {
+            Index(self.0 + rhs)
+        }
+    }
+
+    impl std::ops::Sub<u32> for Index {
+        type Output = Index;
+
+        fn sub(self, rhs: u32) -> Index {
+            Index(self.0 - rhs)
+        }
+    }
+
+    pub struct Slice<'a> (&'a [Token]);
+
+    impl <'a> std::ops::Index<Index> for Slice<'a> {
+        type Output = Token;
+
+        fn index(&self, index: Index) -> &'a Token {
+            &self.0[index.value()]
+        }
+    }
+
+    impl <'a> Slice<'_> {
+        pub fn from(vec: &'a Vec<Token>) -> Slice<'a> {
+            Slice(vec.as_slice())
+        }
+    }
+
+    #[derive(Debug)]
+    pub struct CompactToken {
+        pub tag: Tag,
+        pub start: u32,
+    }
+
+    pub struct CompactSlice<'a> (&'a [CompactToken]);
+
+    impl <'a> std::ops::Index<Index> for CompactSlice<'a> {
+        type Output = CompactToken;
+
+        fn index(&self, index: Index) -> &'a CompactToken {
+            &self.0[index.value()]
+        }
+    }
+
+    impl <'a> CompactSlice<'_> {
+        pub fn from(vec: &'a Vec<CompactToken>) -> CompactSlice<'a> {
+            CompactSlice(vec.as_slice())
+        }
+    }
 }
 
 static KEYWORDS: phf::Map<&'static str, Tag> = phf_map! {
@@ -178,11 +248,11 @@ pub struct Lexer<'a> {
 }
 
 impl Lexer<'_> {
-    fn new(source: &str) -> Lexer {
+    pub fn new(source: &str) -> Lexer {
         Lexer::new_index(source, 0)
     }
 
-    fn new_index(source: &str, index: u32) -> Lexer {
+    pub fn new_index(source: &str, index: u32) -> Lexer {
         assert!(source.len() <= (u32::MAX as usize));
 
         Lexer {
@@ -199,9 +269,9 @@ impl Lexer<'_> {
         }
     }
 
-    fn next(&mut self) -> Token {
+    pub fn next(&mut self) -> Token {
         let mut state = State::Start;
-        let mut result = Token {
+        let mut result = token::Token {
             tag: Tag::Eof,
             loc: Loc {
                 start: self.index.try_into().unwrap(),
@@ -706,7 +776,7 @@ impl Lexer<'_> {
 
 #[cfg(test)]
 mod tests {
-    use crate::lex::{Lexer, Tag};
+    use crate::lex::{Lexer, token::Tag};
 
     fn test_lex(source: &str, expected_token_tags: &[Tag]) {
         let mut lexer = Lexer::new(source);

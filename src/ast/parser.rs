@@ -2,7 +2,7 @@ use bumpalo::Bump;
 
 use crate::lex::{token, token::Tag};
 use crate::ast::{Ast, node::{self, Node}};
-use crate::extra;
+use crate::util::extra;
 
 pub struct Parser<'a> {
     source: &'a str,

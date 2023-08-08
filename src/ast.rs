@@ -4,7 +4,7 @@ mod parser;
 
 use bumpalo::Bump;
 use crate::lex::{token, Lexer};
-use crate::extra;
+use crate::util::extra;
 use crate::ast::parser::Parser;
 // represents the entire, immutable AST of a source file, once parsed
 // in-progress mutable parsing data is stored in the `Parser` struct in ast/parser.rs
@@ -26,7 +26,7 @@ pub mod node {
     use pack_derive::ExtraData;
 
     use crate::lex::token;
-    use crate::extra;
+    use crate::util::extra;
 
     // we store an array of token tags and start locations
     // to reference during parsing. AST nodes don't store tokens

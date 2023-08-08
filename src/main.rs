@@ -1,6 +1,6 @@
 mod lex;
 mod ast;
-pub mod extra;
+mod util;
 use std::fs;
 
 use ast::node::{self, FnSignature};

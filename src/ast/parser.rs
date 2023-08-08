@@ -1,7 +1,7 @@
 use bumpalo::Bump;
 
 use crate::lex::{token, token::Tag};
-use crate::ast::{Ast, node::{self, Node}};
+use crate::ast::node::{self, Node};
 use crate::util::extra;
 
 pub struct Parser<'a> {
@@ -29,7 +29,7 @@ impl <'a> Parser<'_> {
             index: token::Index::from(0),
             nodes: Vec::new(),
             extra: Vec::new(),
-            scratch: bumpalo::collections::Vec::new_in(bump),
+            scratch: bumpalo::collections::Vec::new_in(&bump),
         }
     }
 
@@ -115,6 +115,7 @@ impl <'a> Parser<'_> {
         let stmts = &self.scratch[scratch_top..];
         let extra_top = self.extra.len();
         self.extra.extend_from_slice(stmts);
+        self.scratch.drain(scratch_top..);
 
         Ok(self.add_node(Node {
             main_token: token::Index::from(0),
@@ -284,6 +285,7 @@ impl <'a> Parser<'_> {
         let params = &self.scratch[scratch_top..];
         let extra_top = self.extra.len();
         self.extra.extend_from_slice(params);
+        self.scratch.drain(scratch_top..);
 
         Ok(extra::Range {
             start: extra::Index::from(extra_top),
@@ -323,6 +325,7 @@ impl <'a> Parser<'_> {
         let stmts = &self.scratch[scratch_top..];
         let extra_top = self.extra.len();
         self.extra.extend_from_slice(stmts);
+        self.scratch.drain(scratch_top..);
 
         Ok(self.add_node(Node {
             main_token: l_brace_token,
@@ -444,6 +447,7 @@ impl <'a> Parser<'_> {
         let params = &self.scratch[scratch_top..];
         let extra_top = self.extra.len();
         self.extra.extend_from_slice(params);
+        self.scratch.drain(scratch_top..);
 
         Ok(extra::Range {
             start: extra::Index::from(extra_top),

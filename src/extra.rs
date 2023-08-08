@@ -49,6 +49,12 @@ impl <'a> std::ops::Index<Index> for Slice<'a> {
     }
 }
 
+impl <'a> Slice<'a> {
+    pub fn from(slice: &'a [Data]) -> Slice {
+        Slice(slice)
+    }
+}
+
 pub trait ExtraData<T> {
     fn pack(&self, vec: &mut Vec);
     fn unpack(slice: Slice, index: Index) -> T;

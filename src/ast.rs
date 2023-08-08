@@ -1,18 +1,22 @@
 extern crate pack_derive;
 
-// use crate::extend::VecExtend;
+mod parser;
+
+use bumpalo::Bump;
 use crate::lex::{token, Lexer};
 use crate::extra;
-
+use crate::ast::parser::Parser;
 // represents the entire, immutable AST of a source file, once parsed
 // in-progress mutable parsing data is stored in the `Parser` struct in ast/parser.rs
 // the AST owns the source, token list, node list, and node extra_data list
+// #[derive(Clone)]
 pub struct Ast<'a> {
-    source: String,
-    tokens: token::CompactSlice<'a>,
-    nodes: node::Slice<'a>,
-    // extra_data: &'a [u32],
-    extra: extra::Slice<'a>,
+    source: &'a str,
+    tokens: Vec<token::CompactToken>,
+    nodes: Vec<node::Node>,
+    extra: extra::Vec,
+    // nodes: node::Slice<'a>,
+    // extra: extra::Slice<'a>,
     // errors: &'a [SourceError],
 }
 
@@ -62,7 +66,7 @@ pub mod node {
     //
     // extra data indices represent only the "start" of the
     // unpacked extra data struct in the extra_data array
-    #[derive(Debug)]
+    #[derive(Debug, Clone)]
     pub enum Data {
         NamedType,
         // function declaration 'fn (params...) ret { body }'
@@ -217,6 +221,12 @@ pub mod node {
         }
     }
 
+    impl <'a> Slice<'a> {
+        pub fn from(slice: &'a [Node]) -> Slice {
+            Slice(slice)
+        }
+    }
+
     // function signature, excluding return type
     // params_start = start of parameter node index array
     // params_end = end of parameter node index array
@@ -260,7 +270,8 @@ pub mod node {
 
 impl <'a> Ast<'_> {
     pub fn token_string(&'a self, index: token::Index) -> &'a str {
-        let token_start = self.tokens[index].start;
+        let slice = token::CompactSlice::from(&self.tokens);
+        let token_start = slice[index].start;
         let mut lexer = Lexer::new_index(&self.source, token_start);
         let token = lexer.next();
         let start = token.loc.start as usize;
@@ -270,14 +281,52 @@ impl <'a> Ast<'_> {
     }
 
     pub fn token_tag(&self, index: token::Index) -> token::Tag {
-        self.tokens[index].tag
+        let slice = token::CompactSlice::from(&self.tokens);
+        slice[index].tag
     }
 
     pub fn main_token(&self, node: node::Index) -> token::Index {
-        self.nodes[node].main_token
+        let slice = node::Slice::from(&self.nodes);
+        slice[node].main_token
     }
 
-    pub fn data(&self, node: node::Index) -> &node::Data {
-        &self.nodes[node].data
+    pub fn data(&self, node: node::Index) -> node::Data {
+        let slice = node::Slice::from(&self.nodes);
+        slice[node].data.clone()
+    }
+}
+
+pub fn parse(source: &str) -> Ast {
+    let mut tokens = Vec::<token::CompactToken>::new();
+    let mut lexer = Lexer::new(source);
+    loop {
+        let token = lexer.next();
+        tokens.push(token::CompactToken {
+            tag: token.tag,
+            start: token.loc.start,
+        });
+        match token.tag {
+            token::Tag::Eof => break,
+            _ => {},
+        }
+    }
+
+    // TODO: is moving tuples like this good?
+    // we want to run the destructor for Parser (actually non-existant)
+    // before we move parser.nodes and parser.extra out of the function
+    let (nodes, extra) = {
+        let bump = Bump::new();
+        let tokens_slice = token::CompactSlice::from(&tokens);
+        let mut parser = Parser::new(&bump, source, tokens_slice);
+        let _ = parser.parse_module().unwrap(); // TODO: error handling
+
+        (parser.nodes, parser.extra)
+    };
+
+    Ast {
+        source,
+        tokens,
+        nodes,
+        extra,
     }
 }

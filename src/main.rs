@@ -1,6 +1,5 @@
 mod lex;
 mod ast;
-mod parse;
 pub mod extra;
 use std::fs;
 
@@ -20,5 +19,5 @@ fn main() {
     // println!("packed: {:?}", vec);
     // println!("unpacked: {:?}", unpacked);
     let data = fs::read_to_string("resources/spec/loops.fm").unwrap();
-    parse::parse(&data);
+    ast::parse(&data);
 }

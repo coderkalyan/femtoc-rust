@@ -1,51 +1,25 @@
 use bumpalo::Bump;
 
-use crate::lex::{Lexer, token, token::Tag};
-use crate::ast::node::{self, Node};
+use crate::lex::{token, token::Tag};
+use crate::ast::{Ast, node::{self, Node}};
 use crate::extra;
 
-pub fn parse(source: &str) {
-    let mut tokens = Vec::<token::CompactToken>::new();
-    let mut lexer = Lexer::new(source);
-    loop {
-        let token = lexer.next();
-        tokens.push(token::CompactToken {
-            tag: token.tag,
-            start: token.loc.start,
-        });
-        match token.tag {
-            Tag::Eof => break,
-            _ => {},
-        }
-    }
-
-    let bump = Bump::new();
-    let tokens_slice = token::CompactSlice::from(&tokens);
-    let mut parser = Parser::new(&bump, source, tokens_slice);
-    let node = parser.parse_module();
-    println!("at index: {:?} = {:?}", parser.index, parser.tokens[parser.index]);
-    let node = node.unwrap();
-
-    println!("declaration node: {:?} = {:?}", node, parser.nodes[node.value()]);
-    println!("nodes: {:?}", parser.nodes);
-}
-
-struct Parser<'a> {
+pub struct Parser<'a> {
     source: &'a str,
     tokens: token::CompactSlice<'a>,
     index: token::Index,
 
-    nodes: Vec<Node>,
-    extra: extra::Vec,
+    pub nodes: Vec<Node>,
+    pub extra: extra::Vec,
     scratch: bumpalo::collections::Vec<'a, extra::Data>,
 }
 
 #[derive(Debug, Clone)]
-enum ParseError {
+pub enum ParseError {
     UnexpectedToken,
 }
 
-type Result<T> = std::result::Result<T, ParseError>;
+pub type Result<T> = std::result::Result<T, ParseError>;
 
 impl <'a> Parser<'_> {
     pub fn new(bump: &'a Bump, source: &'a str, tokens: token::CompactSlice<'a>) -> Parser<'a> {
@@ -73,8 +47,16 @@ impl <'a> Parser<'_> {
         extra::Index::from(len)
     }
 
+    fn token_tag(&self, index: token::Index) -> token::Tag {
+        self.tokens[index].tag
+    }
+
+    fn current_tag(&self) -> token::Tag {
+        self.token_tag(self.index)
+    }
+
     fn eat_token(&mut self, tag: token::Tag) -> Option<token::Index> {
-        if self.tokens[self.index].tag == tag {
+        if self.current_tag() == tag {
             self.index = self.index + 1;
             return Some(self.index - 1);
         } else {
@@ -120,7 +102,7 @@ impl <'a> Parser<'_> {
         // TODO: defer drain
 
         loop {
-            let node = match self.tokens[self.index].tag {
+            let node = match self.current_tag() {
                 Tag::Eof => break,
                 Tag::Let => self.parse_declaration()?,
                 _ => return Err(ParseError::UnexpectedToken),
@@ -149,7 +131,7 @@ impl <'a> Parser<'_> {
         // are parsed and returned here directly
         // for everything else, we part in parse_primary_expr() and try to
         // associate it with a binary companion (parse_bin_right_expr())
-        match self.tokens[self.index].tag {
+        match self.current_tag() {
             Tag::Fn => self.expect_fn_declaration(),
             _ => {
                 let left_node = self.parse_primary_expression()?;
@@ -163,15 +145,15 @@ impl <'a> Parser<'_> {
         // in one or more binary expressions - operator precedence parsing
         let mut l_node = l;
         loop {
-            let prec = Parser::precedence(self.tokens[self.index].tag);
+            let prec = Parser::precedence(self.current_tag());
             if prec < expr_precedence {
                 return Ok(l_node);
             }
 
-            let op_token = self.expect_token(self.tokens[self.index].tag)?;
+            let op_token = self.expect_token(self.current_tag())?;
             let mut r_node = self.parse_primary_expression()?;
 
-            let next_prec = Parser::precedence(self.tokens[self.index].tag);
+            let next_prec = Parser::precedence(self.current_tag());
             if prec < next_prec {
                 r_node = self.parse_bin_right_expr(r_node, prec + 1)?;
             }
@@ -186,7 +168,7 @@ impl <'a> Parser<'_> {
     fn parse_primary_expression(&mut self) -> Result<node::Index> {
         // parses an elementary exprsesion such as a literal,
         // variable value, function call, or parenthesis
-        match self.tokens[self.index].tag {
+        match self.current_tag() {
             Tag::LeftParen => {
                 // parentheses are used only for grouping in source code
                 // and don't generate ast nodes since the ast nesting itself
@@ -197,7 +179,7 @@ impl <'a> Parser<'_> {
 
                 Ok(inner_node)
             },
-            Tag::Ident => match self.tokens[self.index + 1].tag {
+            Tag::Ident => match self.token_tag(self.index + 1) {
                 // Tag::LeftParen => self.expect_call(),
                 _ => self.expect_var_expr(),
             },
@@ -245,7 +227,7 @@ impl <'a> Parser<'_> {
     fn expect_type(&mut self) -> Result<node::Index> {
         // parses a type as either a named identifier (u32, Point),
         // function prototype, or aggregate prototype
-        match self.tokens[self.index].tag {
+        match self.current_tag() {
             Tag::Ident => {
                 let ident_token = self.expect_token(Tag::Ident)?;
                 Ok(self.add_node(Node {
@@ -291,7 +273,8 @@ impl <'a> Parser<'_> {
             }
 
             let param_node = self.expect_parameter()?;
-            match self.tokens[self.index].tag {
+            self.scratch.push(param_node.to_extra_data());
+            match self.current_tag() {
                 Tag::Comma => self.index = self.index + 1,
                 Tag::RightParen => {},
                 _ => return Err(ParseError::UnexpectedToken),
@@ -351,12 +334,12 @@ impl <'a> Parser<'_> {
     }
 
     fn parse_statement(&mut self, eat_semi: bool) -> Result<node::Index> {
-        let node = match self.tokens[self.index].tag {
+        let node = match self.current_tag() {
             Tag::Let => self.parse_declaration()?,
             Tag::Return => self.expect_return_statement()?,
             Tag::If => return self.parse_conditional(),
             Tag::For => return self.parse_loop(),
-            Tag::Ident => match self.tokens[self.index + 1].tag {
+            Tag::Ident => match self.token_tag(self.index + 1) {
                 Tag::LeftParen => self.expect_call()?,
                 Tag::Equal | Tag::PlusEqual | Tag::MinusEqual | Tag::AsteriskEqual | Tag::SlashEqual | Tag::PercentEqual | Tag::AmpersandEqual | Tag::PipeEqual | Tag::CaretEqual | Tag::LeftAngleLeftAngleEqual | Tag::RightAngleRightAngleEqual => self.parse_assignment()?,
                 _ => return Err(ParseError::UnexpectedToken),
@@ -374,7 +357,7 @@ impl <'a> Parser<'_> {
 
     fn parse_declaration(&mut self) -> Result<node::Index> {
         let let_token = self.expect_token(Tag::Let)?;
-        if self.tokens[self.index].tag == Tag::Mut {
+        if self.current_tag() == Tag::Mut {
             _ = self.eat_token(Tag::Mut);
             _ = self.expect_token(Tag::Ident)?;
 
@@ -451,7 +434,7 @@ impl <'a> Parser<'_> {
 
             let arg_node = self.parse_expression()?;
             self.scratch.push(arg_node.to_extra_data());
-            match self.tokens[self.index].tag {
+            match self.current_tag() {
                 Tag::Comma => _ = self.eat_token(Tag::Comma),
                 Tag::RightParen => {},
                 _ => return Err(ParseError::UnexpectedToken),
@@ -471,7 +454,7 @@ impl <'a> Parser<'_> {
     fn parse_assignment(&mut self) -> Result<node::Index> {
         let ident_token = self.expect_token(Tag::Ident)?;
 
-        match self.tokens[self.index].tag {
+        match self.current_tag() {
             Tag::Equal => {
                 _ = self.expect_token(Tag::Equal)?;
                 let val = self.parse_expression()?;
@@ -504,7 +487,7 @@ impl <'a> Parser<'_> {
 
         match self.eat_token(Tag::Else) {
             Some(_) => {
-                match self.tokens[self.index].tag {
+                match self.current_tag() {
                     Tag::If => {
                         // chained if
                         let next = self.parse_conditional()?;
@@ -539,7 +522,7 @@ impl <'a> Parser<'_> {
 
         // we have three kinds of loops: forever, conditional, range
         // which we progressively try to match against
-        match self.tokens[self.index].tag {
+        match self.current_tag() {
             Tag::LeftBrace => {
                 // forever loop
                 let body = self.expect_block()?;
@@ -592,7 +575,7 @@ impl <'a> Parser<'_> {
     fn expect_return_statement(&mut self) -> Result<node::Index> {
         let ret_token = self.expect_token(Tag::Return)?;
 
-        match self.tokens[self.index].tag {
+        match self.current_tag() {
             Tag::Semi => {
                 // no return value, assumed void function (will verify in IR during type checking)
                 Ok(self.add_node(Node {

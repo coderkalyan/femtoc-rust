@@ -158,6 +158,7 @@ pub mod token {
         pub start: u32,
     }
 
+    #[derive(Clone, Copy)]
     pub struct CompactSlice<'a> (&'a [CompactToken]);
 
     impl <'a> std::ops::Index<Index> for CompactSlice<'a> {

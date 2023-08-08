@@ -177,6 +177,8 @@ pub mod node {
         // 'break' statement to exit a loop early
         // main_token = 'break'
         Break,
+
+        Module { stmts_start: extra::Index, stmts_end: extra::Index },
     }
 
     #[derive(Clone, Copy, Debug)]

@@ -22,7 +22,7 @@ pub fn parse(source: &str) {
     let bump = Bump::new();
     let tokens_slice = token::CompactSlice::from(&tokens);
     let mut parser = Parser::new(&bump, source, tokens_slice);
-    let node = parser.parse_declaration();
+    let node = parser.parse_module();
     println!("at index: {:?} = {:?}", parser.index, parser.tokens[parser.index]);
     let node = node.unwrap();
 

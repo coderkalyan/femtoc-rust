@@ -111,13 +111,39 @@ impl <'a> Parser<'_> {
         }
     }
 
-    // fn parse_module(&mut self) -> node::Index {
-        // loop {
-        //     let node = 
-        // }
-    // }
+    pub fn parse_module(&mut self) -> Result<node::Index> {
+        // each toplevel (file) may create any number of global statements
+        // so we collect the statement indices in the scratch list,
+        // append all of them to extra at the end, and return the
+        // range in extra containing those indices
+        let scratch_top = self.scratch.len();
+        // TODO: defer drain
 
-    fn expect_expression(&mut self) -> Result<node::Index> {
+        loop {
+            let node = match self.tokens[self.index].tag {
+                Tag::Eof => break,
+                Tag::Let => self.parse_declaration()?,
+                _ => return Err(ParseError::UnexpectedToken),
+            };
+
+            self.scratch.push(node.to_extra_data());
+            _ = self.expect_token(Tag::Semi)?;
+        }
+
+        let stmts = &self.scratch[scratch_top..];
+        let extra_top = self.extra.len();
+        self.extra.extend_from_slice(stmts);
+
+        Ok(self.add_node(Node {
+            main_token: token::Index::from(0),
+            data: node::Data::Module {
+                stmts_start: extra::Index::from(extra_top),
+                stmts_end: extra::Index::from(self.extra.len()),
+            }
+        }))
+    }
+
+    fn parse_expression(&mut self) -> Result<node::Index> {
         // declarations that aren't part of logical or arithmetic expressions,
         // like string literals, function and aggregate declarations, etc,
         // are parsed and returned here directly
@@ -166,7 +192,7 @@ impl <'a> Parser<'_> {
                 // and don't generate ast nodes since the ast nesting itself
                 // provides the correct grouping
                 _ = self.expect_token(Tag::LeftParen)?;
-                let inner_node = self.expect_expression()?;
+                let inner_node = self.parse_expression()?;
                 _ = self.expect_token(Tag::RightParen)?;
 
                 Ok(inner_node)
@@ -346,7 +372,7 @@ impl <'a> Parser<'_> {
         return Ok(node);
     }
 
-    pub fn parse_declaration(&mut self) -> Result<node::Index> {
+    fn parse_declaration(&mut self) -> Result<node::Index> {
         let let_token = self.expect_token(Tag::Let)?;
         if self.tokens[self.index].tag == Tag::Mut {
             _ = self.eat_token(Tag::Mut);
@@ -358,7 +384,7 @@ impl <'a> Parser<'_> {
             };
             _ = self.expect_token(Tag::Equal)?;
 
-            match self.expect_expression() {
+            match self.parse_expression() {
                 Ok(val) => Ok(self.add_node(Node {
                     main_token: let_token,
                     data: node::Data::VarDecl { ty, val }
@@ -374,7 +400,7 @@ impl <'a> Parser<'_> {
             };
             _ = self.expect_token(Tag::Equal)?;
 
-            match self.expect_expression() {
+            match self.parse_expression() {
                 Ok(val) => Ok(self.add_node(Node {
                     main_token: let_token,
                     data: node::Data::ConstDecl { ty, val }
@@ -423,7 +449,7 @@ impl <'a> Parser<'_> {
                 None => {},
             }
 
-            let arg_node = self.expect_expression()?;
+            let arg_node = self.parse_expression()?;
             self.scratch.push(arg_node.to_extra_data());
             match self.tokens[self.index].tag {
                 Tag::Comma => _ = self.eat_token(Tag::Comma),
@@ -448,7 +474,7 @@ impl <'a> Parser<'_> {
         match self.tokens[self.index].tag {
             Tag::Equal => {
                 _ = self.expect_token(Tag::Equal)?;
-                let val = self.expect_expression()?;
+                let val = self.parse_expression()?;
 
                 Ok(self.add_node(Node {
                     main_token: ident_token,
@@ -457,7 +483,7 @@ impl <'a> Parser<'_> {
             },
             _ => {
                 self.index = self.index + 1;
-                let val = self.expect_expression()?;
+                let val = self.parse_expression()?;
 
                 Ok(self.add_node(Node {
                     main_token: ident_token,
@@ -473,7 +499,7 @@ impl <'a> Parser<'_> {
 
         // we have three kinds of if statements: simple, else, and chain
         // which we progressively try to match against
-        let condition = self.expect_expression()?;
+        let condition = self.parse_expression()?;
         let exec_true = self.expect_block()?;
 
         match self.eat_token(Tag::Else) {
@@ -527,7 +553,7 @@ impl <'a> Parser<'_> {
                 // declaration = assume this is the binding, and we are in a range loop
                 let binding = self.parse_declaration()?;
                 _ = self.expect_token(Tag::Semi)?;
-                let condition = self.expect_expression()?;
+                let condition = self.parse_expression()?;
                 _ = self.expect_token(Tag::Semi)?;
                 let afterthought = self.parse_statement(false)?;
 
@@ -543,7 +569,7 @@ impl <'a> Parser<'_> {
             },
             _ => {
                 // assume this is the condition of a conditional loop
-                let condition = self.expect_expression()?;
+                let condition = self.parse_expression()?;
                 let body = self.expect_block()?;
 
                 Ok(self.add_node(Node {
@@ -575,7 +601,7 @@ impl <'a> Parser<'_> {
                 }))
             },
             _ => {
-                let expr_node = self.expect_expression()?;
+                let expr_node = self.parse_expression()?;
                 Ok(self.add_node(Node {
                     main_token: ret_token,
                     data: node::Data::ReturnVal { val: expr_node },

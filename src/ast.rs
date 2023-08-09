@@ -2,7 +2,10 @@ extern crate pack_derive;
 
 mod parser;
 
+use std::io;
 use bumpalo::Bump;
+use crate::errors::syntax;
+use crate::fmt::syntax_errors::CompileErrorRenderer;
 use crate::lex::{token, Lexer};
 use crate::util::extra;
 use crate::ast::parser::Parser;
@@ -11,10 +14,10 @@ use crate::ast::parser::Parser;
 // the AST owns the source, token list, node list, and node extra_data list
 // #[derive(Clone)]
 pub struct Ast<'a> {
-    source: &'a str,
-    tokens: Vec<token::CompactToken>,
-    nodes: Vec<node::Node>,
-    extra: extra::Vec,
+    pub source: &'a str,
+    pub tokens: Vec<token::CompactToken>,
+    pub nodes: Vec<node::Node>,
+    pub extra: extra::Vec,
     // nodes: node::Slice<'a>,
     // extra: extra::Slice<'a>,
     // errors: &'a [SourceError],
@@ -285,6 +288,11 @@ impl <'a> Ast<'_> {
         slice[index].tag
     }
 
+    pub fn token_start(&self, index: token::Index) -> usize {
+        let slice = token::CompactSlice::from(&self.tokens);
+        slice[index].start as usize
+    }
+
     pub fn main_token(&self, node: node::Index) -> token::Index {
         let slice = node::Slice::from(&self.nodes);
         slice[node].main_token
@@ -314,19 +322,28 @@ pub fn parse(source: &str) -> Ast {
     // TODO: is moving tuples like this good?
     // we want to run the destructor for Parser (actually non-existant)
     // before we move parser.nodes and parser.extra out of the function
-    let (nodes, extra) = {
+    let (nodes, extra, errors) = {
         let bump = Bump::new();
         let tokens_slice = token::CompactSlice::from(&tokens);
         let mut parser = Parser::new(&bump, source, tokens_slice);
         let _ = parser.parse_module().unwrap(); // TODO: error handling
 
-        (parser.nodes, parser.extra)
+        (parser.nodes, parser.extra, parser.errors)
     };
 
-    Ast {
+    let ast = Ast {
         source,
         tokens,
         nodes,
         extra,
+    };
+
+    if !errors.is_empty() {
+        let mut out = io::stdout();
+        let located = syntax::locate_errors(&ast, errors.as_slice());
+        let mut renderer = CompileErrorRenderer::<8>::new(&mut out, &ast, "loops.fm", located.as_slice());
+        renderer.format().unwrap();
     }
+
+    ast
 }

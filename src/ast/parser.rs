@@ -3,6 +3,7 @@ use bumpalo::Bump;
 use crate::lex::{token, token::Tag};
 use crate::ast::node::{self, Node};
 use crate::util::extra;
+use crate::errors::syntax::{self, SyntaxError};
 
 pub struct Parser<'a> {
     source: &'a str,
@@ -12,11 +13,13 @@ pub struct Parser<'a> {
     pub nodes: Vec<Node>,
     pub extra: extra::Vec,
     scratch: bumpalo::collections::Vec<'a, extra::Data>,
+    pub errors: Vec<SyntaxError>,
 }
 
 #[derive(Debug, Clone)]
 pub enum ParseError {
     UnexpectedToken,
+    HandledSourceError,
 }
 
 pub type Result<T> = std::result::Result<T, ParseError>;
@@ -30,6 +33,7 @@ impl <'a> Parser<'_> {
             nodes: Vec::new(),
             extra: Vec::new(),
             scratch: bumpalo::collections::Vec::new_in(&bump),
+            errors: Vec::new(),
         }
     }
 
@@ -71,6 +75,67 @@ impl <'a> Parser<'_> {
         }
     }
 
+    fn consume_until_valid_tld(&mut self, report_unmatched: bool) {
+        // consume until we're in a valid state e.g. next let
+        let mut open_parenths: i32 = 0;
+        let mut open_braces: i32 = 0;
+
+        let mut last_open_parenth: token::Index = token::Index::from(0);
+        let mut last_close_parenth: token::Index = token::Index::from(0);
+        let mut last_open_brace: token::Index = token::Index::from(0);
+        let mut last_close_brace: token::Index = token::Index::from(0);
+
+        loop {
+            match self.current_tag() {
+                Tag::Eof => break,
+                Tag::LeftParen => {
+                    last_open_parenth = self.index;
+                    open_parenths += 1;
+                },
+                Tag::RightParen => {
+                    last_close_parenth = self.index;
+                    open_parenths -= 1;
+                },
+                Tag::RightBrace => {
+                    last_close_brace = self.index;
+                    open_braces -= 1;
+                },
+                Tag::RightBrace => {
+                    last_close_brace = self.index;
+                    open_braces -= 1;
+                },
+                Tag::Let => {
+                    // have to make sure this isn't in some smaller block
+                    if (open_parenths == 0) && (open_braces == 0) {
+                        break;
+                    }
+                },
+                _ => {},
+            }
+
+            self.index = self.index + 1;
+        }
+
+        if report_unmatched {
+            // TODO: report unmatched
+        }
+    }
+
+    fn consume_until_semi(&mut self) {
+        loop {
+            match self.current_tag() {
+                Tag::Semi => {
+                    self.index = self.index + 1;
+                    break;
+                },
+                Tag::Eof => break,
+                _ => {},
+            }
+
+            self.index = self.index + 1;
+        }
+    }
+
     fn precedence(tag: token::Tag) -> i32 {
         match tag {
             Tag::Or => 10,
@@ -104,8 +169,32 @@ impl <'a> Parser<'_> {
         loop {
             let node = match self.current_tag() {
                 Tag::Eof => break,
-                Tag::Let => self.parse_declaration()?,
-                _ => return Err(ParseError::UnexpectedToken),
+                Tag::Let => match self.parse_declaration() {
+                    Ok(node) => node,
+                    Err(e) => match e {
+                        ParseError::HandledSourceError => {
+                            loop {
+                                match self.current_tag() {
+                                    Tag::Eof | Tag::Let => break,
+                                    _ => {},
+                                }
+                                self.index = self.index + 1;
+                            }
+
+                            continue;
+                        },
+                        _ => return Err(e),
+                    }
+                },
+                _ => {
+                    self.errors.push(SyntaxError {
+                        tag: syntax::Tag::UnexpectedTldToken,
+                        token: self.index,
+                    });
+                    self.consume_until_valid_tld(false);
+                    continue;
+                }
+                // _ => return Err(ParseError::UnexpectedToken),
             };
 
             self.scratch.push(node.to_extra_data());
@@ -244,7 +333,21 @@ impl <'a> Parser<'_> {
         let fn_token = self.expect_token(Tag::Fn)?;
         let params = self.expect_parameter_list()?;
 
-        let return_type = self.expect_type()?;
+        let return_type = match self.expect_type() {
+            Ok(ty) => ty,
+            Err(e) => match e {
+                ParseError::UnexpectedToken => {
+                    self.errors.push(SyntaxError {
+                        tag: crate::errors::syntax::Tag::MissingReturnType,
+                        token: self.index,
+                    });
+
+                    return Err(ParseError::HandledSourceError);
+                },
+                ParseError::HandledSourceError => return Err(e),
+            },
+        };
+
         let body = self.expect_block()?;
         let signature = self.add_extra(node::FnSignature {
             params_start: params.start,
@@ -375,7 +478,9 @@ impl <'a> Parser<'_> {
                     main_token: let_token,
                     data: node::Data::VarDecl { ty, val }
                 })),
-                Err(_) => Err(ParseError::UnexpectedToken),
+                Err(e) => {
+                    Err(e)
+                },
             }
         } else {
             _ = self.expect_token(Tag::Ident)?;
@@ -391,7 +496,7 @@ impl <'a> Parser<'_> {
                     main_token: let_token,
                     data: node::Data::ConstDecl { ty, val }
                 })),
-                Err(_) => Err(ParseError::UnexpectedToken),
+                Err(e) => Err(e),
             }
         }
     }

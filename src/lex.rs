@@ -107,7 +107,7 @@ pub mod token {
         False,
     }
 
-    #[derive(Clone, Copy, Debug)]
+    #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
     pub struct Index(u32);
 
     impl Index {

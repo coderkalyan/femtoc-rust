@@ -368,21 +368,55 @@ impl <'a> Parser<'_> {
         // append all of them to extra at the end, and return the
         // range in extra containing those indices
         let scratch_top = self.scratch.len();
-        // TODO: defer
 
+        let mut handled_error = false;
         loop {
-            match self.eat_token(Tag::RightParen) {
-                Some(_) => break,
+            match self.current_tag() {
+                Tag::RightParen => {
+                    self.index = self.index + 1;
+                    break;
+                },
                 _ => {},
             }
 
-            let param_node = self.expect_parameter()?;
+            let param_node = match self.expect_parameter() {
+                Ok(node) => node,
+                Err(e) => match e {
+                    ParseError::HandledSourceError => {
+                        handled_error = true;
+                        loop {
+                            match self.current_tag() {
+                                Tag::Comma => {
+                                    self.index = self.index + 1;
+                                    break;
+                                },
+                                Tag::RightParen | Tag::Eof => break,
+                                _ => {},
+                            }
+                            self.index = self.index + 1;
+                        }
+                        continue;
+                    },
+                    ParseError::UnexpectedToken => unreachable!(),
+                }
+            };
             self.scratch.push(param_node.to_extra_data());
             match self.current_tag() {
                 Tag::Comma => self.index = self.index + 1,
-                Tag::RightParen => {},
-                _ => return Err(ParseError::UnexpectedToken),
+                Tag::RightParen => {
+                    self.index = self.index + 1;
+                    break;
+                },
+                _ => {
+                    self.scratch.drain(scratch_top..);
+                    return Err(ParseError::UnexpectedToken);
+                },
             }
+        }
+
+        if handled_error {
+            self.scratch.drain(scratch_top..);
+            return Err(ParseError::HandledSourceError);
         }
 
         let params = &self.scratch[scratch_top..];
@@ -397,13 +431,51 @@ impl <'a> Parser<'_> {
     }
 
     fn expect_parameter(&mut self) -> Result<node::Index> {
-        let ident_token = self.expect_token(Tag::Ident)?;
-        _ = self.expect_token(Tag::Colon);
-        let type_node = self.expect_type()?;
+        let ident_token = match self.expect_token(Tag::Ident) {
+            Ok(token) => token,
+            Err(e) => return Err(e),
+        };
+
+        let mut missing_colon = false;
+        match self.expect_token(Tag::Colon) {
+            Ok(_) => {},
+            Err(e) => match e {
+                ParseError::UnexpectedToken => missing_colon = true,
+                _ => unreachable!(),
+            }
+        };
+        let type_node = match self.expect_type() {
+            Ok(node) => Some(node),
+            Err(e) => match e {
+                ParseError::UnexpectedToken => None,
+                _ => unimplemented!(),
+            }
+        };
+
+        if missing_colon {
+            match type_node {
+                Some(_) => {
+                    // just missing a colon, but have the actual type
+                    self.errors.push(SyntaxError {
+                        tag: syntax::Tag::MissingColon,
+                        token: self.index - 1,
+                    });
+                },
+                None => {
+                    // missing the entire type annotation
+                    self.errors.push(SyntaxError {
+                        tag: syntax::Tag::MissingTypeAnnotation,
+                        token: self.index,
+                    });
+                },
+            }
+
+            return Err(ParseError::HandledSourceError);
+        }
 
         Ok(self.add_node(Node {
             main_token: ident_token,
-            data: node::Data::Param { ty: type_node },
+            data: node::Data::Param { ty: type_node.unwrap() },
         }))
     }
 

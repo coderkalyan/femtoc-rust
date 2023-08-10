@@ -75,6 +75,12 @@ impl <'a> Parser<'_> {
         }
     }
 
+    fn eat_current_token(&mut self) -> token::Index {
+        assert!(self.current_tag() != Tag::Eof);
+        self.index = self.index + 1;
+        return self.index - 1;
+    }
+
     fn consume_until_valid_tld(&mut self, report_unmatched: bool) {
         // consume until we're in a valid state e.g. next let
         let mut open_parenths: i32 = 0;
@@ -240,7 +246,7 @@ impl <'a> Parser<'_> {
                 return Ok(l_node);
             }
 
-            let op_token = self.expect_token(self.current_tag())?;
+            let op_token = self.eat_current_token();
             let mut r_node = self.parse_primary_expression()?;
 
             let next_prec = Parser::precedence(self.current_tag());
@@ -263,45 +269,54 @@ impl <'a> Parser<'_> {
                 // parentheses are used only for grouping in source code
                 // and don't generate ast nodes since the ast nesting itself
                 // provides the correct grouping
-                _ = self.expect_token(Tag::LeftParen)?;
+                _ = self.expect_token(Tag::LeftParen).unwrap();
                 let inner_node = self.parse_expression()?;
-                _ = self.expect_token(Tag::RightParen)?;
+                match self.expect_token(Tag::RightParen) {
+                    Ok(_) => {},
+                    Err(_) => {
+                        self.errors.push(SyntaxError {
+                            tag: syntax::Tag::ExpectedClosingParen,
+                            token: self.index,
+                        });
+                        return Err(ParseError::HandledSourceError);
+                    }
+                }
 
                 Ok(inner_node)
             },
             Tag::Ident => match self.token_tag(self.index + 1) {
                 // Tag::LeftParen => self.expect_call(),
+                // TODO: implement calls
                 _ => self.expect_var_expr(),
             },
             Tag::IntLit => {
-                let main_token = self.expect_token(Tag::IntLit)?;
+                let main_token = self.eat_current_token();
                 Ok(self.add_node(Node {
                     main_token,
                     data: node::Data::IntegerLiteral,
                 }))
             },
             Tag::FloatLit => {
-                let main_token = self.expect_token(Tag::FloatLit)?;
+                let main_token = self.eat_current_token();
                 Ok(self.add_node(Node {
                     main_token,
                     data: node::Data::FloatLiteral,
                 }))
             },
-            Tag::True => {
-                let main_token = self.expect_token(Tag::True)?;
+            Tag::True | Tag::False => {
+                let main_token = self.eat_current_token();
                 Ok(self.add_node(Node {
                     main_token,
                     data: node::Data::BoolLiteral,
                 }))
             },
-            Tag::False => {
-                let main_token = self.expect_token(Tag::False)?;
-                Ok(self.add_node(Node {
-                    main_token,
-                    data: node::Data::BoolLiteral,
-                }))
+            _ => {
+                self.errors.push(SyntaxError {
+                    tag: syntax::Tag::ExpectedExpression,
+                    token: self.index,
+                });
+                Err(ParseError::HandledSourceError)
             },
-            _ => Err(ParseError::UnexpectedToken),
         }
     }
 
@@ -319,7 +334,7 @@ impl <'a> Parser<'_> {
         // function prototype, or aggregate prototype
         match self.current_tag() {
             Tag::Ident => {
-                let ident_token = self.expect_token(Tag::Ident)?;
+                let ident_token = self.eat_current_token();
                 Ok(self.add_node(Node {
                     main_token: ident_token,
                     data: node::Data::NamedType,

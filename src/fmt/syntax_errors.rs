@@ -53,6 +53,8 @@ impl <'a, const W: usize> CompileErrorRenderer<'a, W> {
             syntax::Tag::MissingIdentifier => "missing an identifier",
             syntax::Tag::MissingTypeAnnotation => "missing a type annotation",
             syntax::Tag::UnexpectedTldToken => "unexpected statement",
+            syntax::Tag::ExpectedExpression => "expected an expression",
+            syntax::Tag::ExpectedClosingParen => "expected closing parentheses ')'",
         };
 
         self.stream.indent();

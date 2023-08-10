@@ -15,6 +15,8 @@ pub mod syntax {
         MissingReturnType,
         MissingIdentifier,
         UnexpectedTldToken,
+        ExpectedClosingParen,
+        ExpectedExpression,
     }
 
     #[derive(Debug)]

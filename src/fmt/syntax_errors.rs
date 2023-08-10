@@ -34,7 +34,7 @@ impl <'a, const W: usize> CompileErrorRenderer<'a, W> {
     fn skip_whitespace(&self, source_index: u32) -> u32 {
         let mut i = source_index as usize;
         while i < self.source.len() {
-            if (self.source.as_bytes()[i] as char).is_whitespace() {
+            if !(self.source.as_bytes()[i] as char).is_whitespace() {
                 break;
             }
 

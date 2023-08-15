@@ -1,8 +1,11 @@
+#![feature(variant_count)]
+
 mod lex;
 mod ast;
 mod util;
 mod errors;
 mod fmt;
+mod mir;
 
 use std::fs;
 

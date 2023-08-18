@@ -1,12 +1,20 @@
 mod scope;
 mod reduction;
+mod integer_literal;
+mod scope2;
 
 pub mod inst {
+    use pack_derive::ExtraData;
+
+    use crate::{util::extra, ast::node};
+
+    #[derive(Debug)]
     pub struct Inst {
-        tag: Tag,
-        data: Data,
+        pub tag: Tag,
+        pub data: Data,
     }
 
+    #[derive(Debug)]
     pub enum Tag {
         // load an integer immediate
         // data.int = int value
@@ -66,6 +74,7 @@ pub mod inst {
         Module,
     }
 
+    #[derive(Debug)]
     pub enum Data {
         // integer immediate
         Int(u64),
@@ -73,6 +82,12 @@ pub mod inst {
         Float(f64),
         // binary operation
         Bin { l: Ref, r: Ref },
+        PlNode {
+            // reference to the node creating this instruction
+            node: node::Index,
+            // index into extra where payload is stored
+            pl: extra::Index,
+        }
     }
 
     #[derive(Debug, PartialEq, Clone, Copy)]
@@ -107,7 +122,26 @@ pub mod inst {
             Link(value)
         }
     }
-    
+
+    impl From<Index> for Link {
+        fn from(value: Index) -> Self {
+            Link(value.0)
+        }
+    }
+
+    impl Into<extra::Data> for Link {
+        fn into(self) -> extra::Data {
+            extra::Data::from(self.0)
+        }
+    }
+
+    impl From<usize> for Link {
+        fn from(value: usize) -> Self {
+            assert!(value <= (u32::MAX as usize));
+            Link(value as u32)
+        }
+    }
+
     // TODO: check the performance of this, it may be horrible if the matches
     // don't optimize into LUTs, and everyone will be sad
     impl From<Link> for Ref {
@@ -166,6 +200,51 @@ pub mod inst {
 
             Link(l)
         }
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    pub struct Index(u32);
+
+    impl From<usize> for Index {
+        fn from(value: usize) -> Index {
+            assert!(value <= (u32::MAX as usize));
+            Index(value as u32)
+        }
+    }
+
+    impl From<Index> for u32 {
+        fn from(value: Index) -> u32 {
+            value.0
+        }
+    }
+
+    impl std::ops::Add<u32> for Index {
+        type Output = Index;
+
+        fn add(self, rhs: u32) -> Index {
+            Index(self.0 + rhs)
+        }
+    }
+
+    // pub struct Slice<'a> (&'a [Node]);
+
+    // impl <'a> std::ops::Index<Index> for Slice<'a> {
+    //     type Output = Node;
+
+    //     fn index(&self, index: Index) -> &'a Node {
+    //         &self.0[index.value()]
+    //     }
+    // }
+
+    // impl <'a> Slice<'a> {
+    //     pub fn from(slice: &'a [Node]) -> Slice {
+    //         Slice(slice)
+    //     }
+    // }
+    #[derive(ExtraData)]
+    pub struct Binary {
+        pub lref: Link,
+        pub rref: Link,
     }
 }
 

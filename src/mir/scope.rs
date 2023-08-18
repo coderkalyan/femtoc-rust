@@ -1,9 +1,8 @@
-use std::collections::HashMap;
-use bumpalo::Bump;
+use std::{collections::HashMap, cell::RefCell};
 
 use crate::{ast::node, util::extra};
 
-use super::{inst::Link, reduction::Reduction};
+use super::{reduction::Reduction, inst::{Inst, Index, Link}};
 
 #[derive(Debug, PartialEq)]
 pub enum ResolveError {
@@ -12,139 +11,171 @@ pub enum ResolveError {
 }
 
 #[derive(Debug)]
-pub struct Namespace<'a> {
-    parent: &'a Scope<'a>,
-    decls: HashMap<u32, node::Index>,
-    types: HashMap<u32, node::Index>,
+pub struct Base<'a, 'bump> {
+    parent: Option<&'a Base<'a, 'bump>>,
+    scope: Scope<'a, 'bump>,
 }
 
 #[derive(Debug)]
-pub struct Block<'a> {
-    parent: &'a Scope<'a>,
+pub enum Scope<'a, 'bump> {
+    Module,
+    Namespace(Namespace),
+    Block(Block<'a, 'bump>),
+    Body(Body),
+    LocalVal(LocalVal),
+    LocalPtr(LocalPtr),
+    LocalType(LocalType),
+}
+
+#[derive(Debug)]
+pub struct Namespace {
+    decls: RefCell<HashMap<u32, node::Index>>,
+    types: RefCell<HashMap<u32, node::Index>>,
+}
+
+#[derive(Debug)]
+pub struct Block<'a, 'bump> {
     instructions: Vec<u32>,
-    scratch: bumpalo::collections::Vec<'a, extra::Data>,
-    red: &'a mut Reduction,
+    scratch: bumpalo::collections::Vec<'bump, extra::Data>,
+    pub red: &'a mut Reduction<'a>,
 }
 
 #[derive(Debug)]
-pub struct Body<'a> {
-    parent: &'a Scope<'a>,
+pub struct Body {
     fn_node: node::Index,
 }
 
 #[derive(Debug)]
-pub struct LocalVal<'a> {
-    parent: &'a Scope<'a>,
+pub struct LocalVal {
     ident: u32,
     link: Link,
 }
 
 #[derive(Debug)]
-pub struct LocalPtr<'a> {
-    parent: &'a Scope<'a>,
+pub struct LocalPtr {
     ident: u32,
     link: Link,
 }
 
 #[derive(Debug)]
-pub struct LocalType<'a> {
-    parent: &'a Scope<'a>,
+pub struct LocalType {
     ident: u32,
     link: Link,
 }
 
-#[derive(Debug)]
-pub enum Scope<'a> {
-    Module,
-    Namespace(Namespace<'a>),
-    Block(Block<'a>),
-    Body(Body<'a>),
-    LocalVal(LocalVal<'a>),
-    LocalPtr(LocalPtr<'a>),
-    LocalType(LocalType<'a>),
+impl Namespace {
+    pub fn new() -> Namespace {
+        Namespace {
+            decls: RefCell::new(HashMap::new()),
+            types: RefCell::new(HashMap::new()),
+        }
+    }
+
+    pub fn insert_decl(&self, ident: u32, node: node::Index) {
+        self.decls.borrow_mut().insert(ident, node);
+    }
 }
 
-impl <'a> Scope<'a> {
-    pub fn new_module() -> Scope<'a> { Scope::Module }
+impl <'a, 'bump> Block<'_, '_> {
+    pub fn add_inst(&mut self, inst: Inst) -> Index {
+        // reserve in both before adding atomically
+        let index = Index::from(self.red.instructions.len());
+        self.instructions.reserve(1);
+        self.instructions.reserve(1);
 
-    pub fn new_namespace(parent: &'a Scope) -> Scope<'a> {
-        Scope::Namespace(Namespace {
-            parent,
-            decls: HashMap::new(),
-            types: HashMap::new() ,
-        })
-        // TODO: types bug in resolve_type
+        self.red.instructions.push(inst);
+        self.instructions.push(index.into());
+
+        index
     }
+}
 
-    pub fn new_block(parent: &'a Scope, bump: &'a Bump, red: &'a mut Reduction) -> Scope<'a> {
-        Scope::Block(Block {
-            parent,
-            instructions: Vec::new(),
-            scratch: bumpalo::collections::Vec::new_in(bump),
-            red,
-        })
+impl LocalVal {
+    pub fn new(ident: u32, link: Link) -> LocalVal {
+        LocalVal { ident, link }
     }
+}
 
-    pub fn new_body(parent: &'a Scope, fn_node: node::Index) -> Scope<'a> {
-        Scope::Body(Body { parent, fn_node })
+impl LocalPtr {
+    pub fn new(ident: u32, link: Link) -> LocalPtr {
+        LocalPtr { ident, link }
     }
+}
 
-    pub fn new_local_val(parent: &'a Scope, ident: u32, link: Link) -> Scope<'a> {
-        Scope::LocalVal(LocalVal { parent, ident, link })
+impl LocalType {
+    pub fn new(ident: u32, link: Link) -> LocalType {
+        LocalType { ident, link }
     }
+}
 
-    pub fn new_local_ptr(parent: &'a Scope, ident: u32, link: Link) -> Scope<'a> {
-        Scope::LocalPtr(LocalPtr { parent, ident, link })
+impl <'a, 'bump> From<Namespace> for Scope<'a, 'bump> {
+    fn from(value: Namespace) -> Self {
+        Scope::Namespace(value)
     }
+}
 
-    pub fn new_local_type(parent: &'a Scope, ident: u32, link: Link) -> Scope<'a> {
-        Scope::LocalType(LocalType { parent, ident, link })
+impl <'a, 'bump> From<Block<'a, 'bump>> for Scope<'a, 'bump> {
+    fn from(value: Block<'a, 'bump>) -> Self {
+        Scope::Block(value)
     }
+}
 
-    pub fn resolve_var(&'a self, ident: u32) -> Result<&'a Scope<'a>, ResolveError> {
-        let mut found: Option<&'a Scope> = None;
-        let mut s: &'a Scope<'a> = self;
+impl <'a, 'bump> From<LocalVal> for Scope<'a, 'bump> {
+    fn from(value: LocalVal) -> Self {
+        Scope::LocalVal(value)
+    }
+}
+
+impl <'a, 'bump> From<LocalPtr> for Scope<'a, 'bump> {
+    fn from(value: LocalPtr) -> Self {
+        Scope::LocalPtr(value)
+    }
+}
+
+impl <'a, 'bump> From<LocalType> for Scope<'a, 'bump> {
+    fn from(value: LocalType) -> Self {
+        Scope::LocalType(value)
+    }
+}
+
+impl <'a, 'b> Base<'a, 'b> {
+    pub fn resolve_var(&'a self, ident: u32) -> Result<&'a Base<'a, 'b>, ResolveError> {
+        let mut found: Option<&'a Base> = None;
+        let mut s = self;
 
         loop {
-            match s {
+            match s.scope {
                 Scope::Module => break,
-                Scope::Namespace(namespace) => {
-                    match namespace.decls.get(&ident) {
+                Scope::Namespace(ref namespace) => {
+                    match namespace.decls.borrow().get(&ident) {
                         Some(_) => match found {
                             Some(_) => return Err(ResolveError::IdentifierShadowed),
                             None => found = Some(s),
                         },
                         None => {},
                     }
-
-                    s = namespace.parent;
                 },
-                Scope::Block(block) => {
-                    s = block.parent;
-                },
-                Self::Body(body) => s = body.parent,
-                Self::LocalVal(local_val) => {
+                Scope::Block(_) | Scope::Body(_) => {},
+                Scope::LocalVal(ref local_val) => {
                     if local_val.ident == ident {
                         match found {
                             Some(_) => return Err(ResolveError::IdentifierShadowed),
                             None => found = Some(s),
                         }
                     }
-
-                    s = local_val.parent;
                 },
-                Self::LocalPtr(local_ptr) => {
+                Scope::LocalPtr(ref local_ptr) => {
                     if local_ptr.ident == ident {
                         match found {
                             Some(_) => return Err(ResolveError::IdentifierShadowed),
                             None => found = Some(s),
                         }
                     }
-
-                    s = local_ptr.parent;
                 },
-                Self::LocalType(local_type) => s = local_type.parent,
+                Scope::LocalType(_) => {},
             }
+
+            s = s.parent.unwrap();
         }
 
         match found {
@@ -153,50 +184,35 @@ impl <'a> Scope<'a> {
         }
     }
 
-    pub fn resolve_type(&'a self, ident: u32) -> Result<&'a Scope<'a>, ResolveError> {
-        let mut found: Option<&'a Scope> = None;
-        let mut s: &'a Scope<'a> = self;
+    pub fn resolve_type(&'a self, ident: u32) -> Result<&'a Base<'a, 'b>, ResolveError> {
+        let mut found: Option<&'a Base> = None;
+        let mut s = self;
 
         loop {
-            match s {
+            match s.scope {
                 Scope::Module => break,
-                Scope::Namespace(namespace) => {
-                    match namespace.decls.get(&ident) {
+                Scope::Namespace(ref namespace) => {
+                    match namespace.decls.borrow().get(&ident) {
                         Some(_) => match found {
                             Some(_) => return Err(ResolveError::IdentifierShadowed),
                             None => found = Some(s),
                         },
                         None => {},
                     }
-
-                    s = namespace.parent;
                 },
-                Scope::Block(block) => {
-                    s = block.parent;
-                },
-                Self::Body(body) => s = body.parent,
-                Self::LocalVal(local_val) => {
+                Scope::Block(_) | Scope::Body(_) => {},
+                Scope::LocalVal(_) | Scope::LocalPtr(_) => {},
+                Scope::LocalType(ref local_val) => {
                     if local_val.ident == ident {
                         match found {
                             Some(_) => return Err(ResolveError::IdentifierShadowed),
                             None => found = Some(s),
                         }
                     }
-
-                    s = local_val.parent;
                 },
-                Self::LocalPtr(local_ptr) => {
-                    if local_ptr.ident == ident {
-                        match found {
-                            Some(_) => return Err(ResolveError::IdentifierShadowed),
-                            None => found = Some(s),
-                        }
-                    }
-
-                    s = local_ptr.parent;
-                },
-                Self::LocalType(local_type) => s = local_type.parent,
             }
+
+            s = s.parent.unwrap();
         }
 
         match found {
@@ -208,11 +224,13 @@ impl <'a> Scope<'a> {
 
 #[cfg(test)]
 mod test {
-    use crate::{util::interner::Interner, ast::node, mir::inst::{Ref, Link}};
+    use std::{collections::HashMap, cell::RefCell};
 
-    use super::{Scope, ResolveError};
+    use crate::{util::interner::Interner, ast::node, mir::inst::Link};
 
-    fn compare_resolve(a: Result<&Scope, ResolveError>, b: Result<&Scope, ResolveError>) {
+    use super::{Scope, Base, Namespace, ResolveError, LocalVal, LocalPtr};
+
+    fn compare_resolve<'a, 'b>(a: Result<&'a Base<'a, 'b>, ResolveError>, b: Result<&'a Base<'a, 'b>, ResolveError>) {
         match b {
             Ok(scope) => assert_eq!(a.unwrap() as *const _, scope as *const _),
             Err(e) => assert_eq!(a.unwrap_err(), e),
@@ -222,27 +240,30 @@ mod test {
     #[test]
     fn namespace_member() {
         let mut interner = Interner::new();
-        let module = Scope::new_module();
-        let mut namespace = Scope::new_namespace(&module);
+
+        let module = Base {
+            parent: None,
+            scope: Scope::Module,
+        };
+        let namespace = Base {
+            parent: Some(&module),
+            scope: Namespace::new().into(),
+        };
 
         let apple = interner.intern(String::from("apple"));
         let banana = interner.intern(String::from("banana"));
         let cherry = interner.intern(String::from("cherry"));
 
-        assert_eq!(namespace.resolve_var(apple).unwrap_err(), ResolveError::IdentifierNotFound);
-        assert_eq!(namespace.resolve_var(banana).unwrap_err(), ResolveError::IdentifierNotFound);
-        assert_eq!(namespace.resolve_var(cherry).unwrap_err(), ResolveError::IdentifierNotFound);
+        compare_resolve(namespace.resolve_var(apple), Err(ResolveError::IdentifierNotFound));
+        compare_resolve(namespace.resolve_var(banana), Err(ResolveError::IdentifierNotFound));
+        compare_resolve(namespace.resolve_var(cherry), Err(ResolveError::IdentifierNotFound));
 
-        {
-            let decls = match namespace {
-                Scope::Namespace(ref mut ns) => &mut ns.decls,
-                _ => unreachable!(),
-            };
-            decls.insert(apple, node::Index::from(0));
-            decls.insert(banana, node::Index::from(1));
-            decls.insert(cherry, node::Index::from(2));
+        if let Scope::Namespace(ref ns) = namespace.scope {
+            ns.insert_decl(apple, 0.into());
+            ns.insert_decl(banana, 1.into());
+            ns.insert_decl(cherry, 2.into());
         }
-        
+
         compare_resolve(namespace.resolve_var(apple), Ok(&namespace));
         compare_resolve(namespace.resolve_var(banana), Ok(&namespace));
         compare_resolve(namespace.resolve_var(cherry), Ok(&namespace));
@@ -251,27 +272,36 @@ mod test {
     #[test]
     fn local_var() {
         let mut interner = Interner::new();
-        let module = Scope::new_module();
-        let mut namespace = Scope::new_namespace(&module);
+
+        let module = Base {
+            parent: None,
+            scope: Scope::Module,
+        };
+        let namespace = Base {
+            parent: Some(&module),
+            scope: Namespace::new().into(),
+        };
 
         let apple = interner.intern(String::from("apple"));
         let banana = interner.intern(String::from("banana"));
         let cherry = interner.intern(String::from("cherry"));
 
         let a = node::Index::from(0);
-        let b = Link::from(1);
-        let c = Link::from(2);
+        let b = Link::from(1 as u32);
+        let c = Link::from(2 as u32);
 
-        {
-            let decls = match namespace {
-                Scope::Namespace(ref mut ns) => &mut ns.decls,
-                _ => unreachable!(),
-            };
-            decls.insert(apple, a);
+        if let Scope::Namespace(ref ns) = namespace.scope {
+            ns.insert_decl(apple, a);
         }
 
-        let banana_var = Scope::new_local_val(&namespace, banana, b);
-        let cherry_var = Scope::new_local_ptr(&banana_var, cherry, c);
+        let banana_var = Base {
+            parent: Some(&namespace),
+            scope: LocalVal::new(banana, b).into(),
+        };
+        let cherry_var = Base {
+            parent: Some(&banana_var),
+            scope: LocalPtr::new(cherry, c).into(),
+        };
 
         compare_resolve(namespace.resolve_var(apple), Ok(&namespace));
         compare_resolve(namespace.resolve_var(banana), Err(ResolveError::IdentifierNotFound));
@@ -286,29 +316,39 @@ mod test {
         compare_resolve(cherry_var.resolve_var(cherry), Ok(&cherry_var));
     }
 
+    #[test]
     fn namespace_shadowing() {
         let mut interner = Interner::new();
-        let module = Scope::new_module();
-        let mut namespace = Scope::new_namespace(&module);
+
+        let module = Base {
+            parent: None,
+            scope: Scope::Module,
+        };
+        let namespace = Base {
+            parent: Some(&module),
+            scope: Namespace::new().into(),
+        };
 
         let apple = interner.intern(String::from("apple"));
         let banana = interner.intern(String::from("banana"));
         let cherry = interner.intern(String::from("cherry"));
 
-        let c = Link::from(2);
-        let d = Link::from(3);
+        let c = Link::from(2 as u32);
+        let d = Link::from(3 as u32);
 
-        {
-            let decls = match namespace {
-                Scope::Namespace(ref mut ns) => &mut ns.decls,
-                _ => unreachable!(),
-            };
-            decls.insert(apple, node::Index::from(0));
-            decls.insert(banana, node::Index::from(1));
+        if let Scope::Namespace(ref ns) = namespace.scope {
+            ns.insert_decl(apple, 0.into());
+            ns.insert_decl(banana, 1.into());
         }
 
-        let cherry_var = Scope::new_local_val(&namespace, cherry, c);
-        let illegal_var = Scope::new_local_val(&cherry_var, apple, d);
+        let cherry_var = Base {
+            parent: Some(&namespace),
+            scope: LocalVal::new(cherry, c).into(),
+        };
+        let illegal_var = Base {
+            parent: Some(&cherry_var),
+            scope: LocalVal::new(apple, d).into(),
+        };
 
         compare_resolve(cherry_var.resolve_var(apple), Ok(&namespace));
         compare_resolve(cherry_var.resolve_var(banana), Ok(&namespace));
@@ -319,7 +359,11 @@ mod test {
 
     // fn block_shadowing() {
     //     let mut interner = Interner::new();
-    //     let module = Scope::new_module();
+
+    //     let module = Base {
+    //         parent: None,
+    //         scope: Scope::Module,
+    //     };
     //     // let outer = Scope::new_block
 
     //     let apple = interner.intern(String::from("apple"));

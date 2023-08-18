@@ -22,8 +22,10 @@ impl Index {
         assert!(index <= (u32::MAX as usize));
         Index(index as u32)
     }
+}
 
-    pub fn to_extra_data(self) -> Data {
+impl Into<Data> for Index {
+    fn into(self) -> Data {
         Data::from(self.0)
     }
 }

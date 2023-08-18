@@ -203,7 +203,7 @@ impl <'a> Parser<'_> {
                 // _ => return Err(ParseError::UnexpectedToken),
             };
 
-            self.scratch.push(node.to_extra_data());
+            self.scratch.push(node.into());
             _ = self.expect_token(Tag::Semi)?;
         }
 
@@ -415,7 +415,7 @@ impl <'a> Parser<'_> {
                     ParseError::UnexpectedToken => unreachable!(),
                 }
             };
-            self.scratch.push(param_node.to_extra_data());
+            self.scratch.push(param_node.into());
             match self.current_tag() {
                 Tag::Comma => self.index = self.index + 1,
                 Tag::RightParen => {
@@ -509,7 +509,7 @@ impl <'a> Parser<'_> {
                 _ => {},
             }
             let statement = self.parse_statement(true)?;
-            self.scratch.push(statement.to_extra_data());
+            self.scratch.push(statement.into());
         }
 
         let stmts = &self.scratch[scratch_top..];
@@ -628,7 +628,7 @@ impl <'a> Parser<'_> {
             }
 
             let arg_node = self.parse_expression()?;
-            self.scratch.push(arg_node.to_extra_data());
+            self.scratch.push(arg_node.into());
             match self.current_tag() {
                 Tag::Comma => _ = self.eat_token(Tag::Comma),
                 Tag::RightParen => {},

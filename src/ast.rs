@@ -12,7 +12,7 @@ use crate::ast::parser::Parser;
 // represents the entire, immutable AST of a source file, once parsed
 // in-progress mutable parsing data is stored in the `Parser` struct in ast/parser.rs
 // the AST owns the source, token list, node list, and node extra_data list
-// #[derive(Clone)]
+#[derive(Debug)]
 pub struct Ast<'a> {
     pub source: &'a str,
     pub tokens: Vec<token::CompactToken>,
@@ -191,17 +191,21 @@ pub mod node {
     #[derive(Clone, Copy, Debug)]
     pub struct Index(u32);
 
-    impl Index {
-        pub fn from(index: usize) -> Index {
-            assert!(index <= (u32::MAX as usize));
-            Index(index as u32)
+    impl From<usize> for Index {
+        fn from(value: usize) -> Self {
+            assert!(value <= (u32::MAX as usize));
+            Index(value as u32)
         }
+    }
 
+    impl Index {
         pub fn value(&self) -> usize {
             self.0 as usize
         }
+    }
 
-        pub fn to_extra_data(&self) -> extra::Data {
+    impl Into<extra::Data> for Index {
+        fn into(self) -> extra::Data {
             extra::Data::from(self.0)
         }
     }

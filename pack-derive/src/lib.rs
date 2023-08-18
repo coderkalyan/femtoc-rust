@@ -21,7 +21,7 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                     quote! {
                         impl extra::ExtraData<#name> for #name {
                             fn pack(&self, vec: &mut extra::Vec) {
-                                #(vec.push(self.#named0.to_extra_data());)*
+                                #(vec.push(self.#named0.into());)*
                             }
 
                             fn unpack(slice: extra::Slice, index: extra::Index) -> #name {

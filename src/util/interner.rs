@@ -5,6 +5,7 @@ use std::collections::HashMap;
 // is interned. Can also return the string given a handle
 // TODO: this could be more efficient, partly because the port to rust
 // from zig changes some primitives (ArrayHashMap)
+#[derive(Debug)]
 pub struct Interner {
     handles: HashMap<Box<String>, u32>,
     entries: Vec<*const str>,

@@ -26,7 +26,7 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
                             fn unpack(slice: extra::Slice, index: extra::Index) -> #name {
                                 #name {
-                                    #(#named1: #types::from(slice[index + #indices].value() as usize)),*
+                                    #(#named1: #types::from(slice[index + #indices].value())),*
                                 }
                             }
                         }

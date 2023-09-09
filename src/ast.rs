@@ -198,6 +198,12 @@ pub mod node {
         }
     }
 
+    impl From<u32> for Index {
+        fn from(value: u32) -> Self {
+            Index(value)
+        }
+    }
+
     impl Index {
         pub fn value(&self) -> usize {
             self.0 as usize

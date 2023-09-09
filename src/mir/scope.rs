@@ -259,9 +259,9 @@ mod test {
         compare_resolve(namespace.resolve_var(cherry), Err(ResolveError::IdentifierNotFound));
 
         if let Scope::Namespace(ref ns) = namespace.scope {
-            ns.insert_decl(apple, 0.into());
-            ns.insert_decl(banana, 1.into());
-            ns.insert_decl(cherry, 2.into());
+            ns.insert_decl(apple, 0u32.into());
+            ns.insert_decl(banana, 1u32.into());
+            ns.insert_decl(cherry, 2u32.into());
         }
 
         compare_resolve(namespace.resolve_var(apple), Ok(&namespace));
@@ -286,9 +286,9 @@ mod test {
         let banana = interner.intern(String::from("banana"));
         let cherry = interner.intern(String::from("cherry"));
 
-        let a = node::Index::from(0);
-        let b = Link::from(1 as u32);
-        let c = Link::from(2 as u32);
+        let a = node::Index::from(0u32);
+        let b = Link::from(1u32);
+        let c = Link::from(2u32);
 
         if let Scope::Namespace(ref ns) = namespace.scope {
             ns.insert_decl(apple, a);
@@ -337,8 +337,8 @@ mod test {
         let d = Link::from(3 as u32);
 
         if let Scope::Namespace(ref ns) = namespace.scope {
-            ns.insert_decl(apple, 0.into());
-            ns.insert_decl(banana, 1.into());
+            ns.insert_decl(apple, 0u32.into());
+            ns.insert_decl(banana, 1u32.into());
         }
 
         let cherry_var = Base {

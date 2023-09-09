@@ -556,7 +556,7 @@ impl <'a> Parser<'_> {
 
             let ty = match self.eat_token(Tag::Colon) {
                 Some(_) => self.expect_type()?,
-                None => node::Index::from(0),
+                None => 0u32.into(),
             };
             _ = self.expect_token(Tag::Equal)?;
 
@@ -574,7 +574,7 @@ impl <'a> Parser<'_> {
 
             let ty = match self.eat_token(Tag::Colon) {
                 Some(_) => self.expect_type()?,
-                None => node::Index::from(0),
+                None => 0u32.into(),
             };
             _ = self.expect_token(Tag::Equal)?;
 
@@ -776,7 +776,7 @@ impl <'a> Parser<'_> {
                 // no return value, assumed void function (will verify in IR during type checking)
                 Ok(self.add_node(Node {
                     main_token: ret_token,
-                    data: node::Data::ReturnVal { val: node::Index::from(0) },
+                    data: node::Data::ReturnVal { val: 0u32.into() },
                 }))
             },
             _ => {

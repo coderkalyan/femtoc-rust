@@ -2,11 +2,14 @@
 pub struct Data(u32);
 
 impl Data {
-    pub fn from(value: u32) -> Data {
-        Data(value)
-    }
     pub fn value(self) -> u32 {
         self.0
+    }
+}
+
+impl From<u32> for Data {
+    fn from(value: u32) -> Data {
+        Data(value)
     }
 }
 
@@ -17,10 +20,18 @@ impl Index {
     pub fn value(self) -> usize {
         self.0 as usize
     }
+}
 
-    pub fn from(index: usize) -> Index {
-        assert!(index <= (u32::MAX as usize));
-        Index(index as u32)
+impl From<usize> for Index {
+    fn from(value: usize) -> Index {
+        assert!(value <= (u32::MAX as usize));
+        Index(value as u32)
+    }
+}
+
+impl From<u32> for Index {
+    fn from(value: u32) -> Index {
+        Index(value)
     }
 }
 

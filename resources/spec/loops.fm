@@ -1,4 +1,4 @@
-let main = fn (foo, bar: u32) void {
+let main = fn (foo: u32, bar: u32) void {
     let mut count: u32 = 0;
     for {
         count += 1;

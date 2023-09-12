@@ -10,3 +10,4 @@ proc-macro2 = "1.0"
 pack-derive = { version = "0.1.0", path = "pack-derive" }
 phf = { version = "0.11", features = ["macros"] }
 bumpalo = { version = "3.13", features = ["collections"] }
+clap = { version = "4.4.2", features = ["derive"] }

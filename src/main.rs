@@ -8,20 +8,18 @@ mod fmt;
 mod mir;
 
 use std::fs;
+use clap::Parser;
+
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    filename: String,
+}
 
 fn main() {
-    // let signature = FnSignature {
-    //     params_start: extra::Index::from(1),
-    //     params_end: extra::Index::from(2),
-    //     return_type: node::Index::from(1),
-    // };
-
-    // let mut vec = Vec::new();
-    // signature.pack(&mut vec);
-    // let unpacked = FnSignature::unpack(&vec, 0);
-
-    // println!("packed: {:?}", vec);
-    // println!("unpacked: {:?}", unpacked);
-    let data = fs::read_to_string("resources/spec/loops.fm").unwrap();
-    ast::parse(&data);
+    let args = Args::parse();
+    let data = fs::read_to_string(args.filename).unwrap();
+    let ast = ast::parse(&data);
+    let module = mir::reduce(&ast);
+    println!("{:?}", module);
 }

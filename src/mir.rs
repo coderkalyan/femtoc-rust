@@ -1,12 +1,22 @@
+use crate::util::{extra, interner::Interner};
+
 mod scope;
 mod reduction;
 mod integer_literal;
-mod scope2;
+
+pub use reduction::reduce;
+
+#[derive(Debug)]
+pub struct Mir {
+    pub insts: Vec<inst::Inst>,
+    pub extra: extra::Vec,
+    pub interner: Interner,
+}
 
 pub mod inst {
     use pack_derive::ExtraData;
 
-    use crate::{util::extra, ast::node};
+    use crate::{util::extra, ast::node, lex::token};
 
     #[derive(Debug)]
     pub struct Inst {
@@ -56,6 +66,7 @@ pub mod inst {
         Store,
 
         FnDecl,
+        Param,
         Call,
 
         Block,
@@ -83,11 +94,23 @@ pub mod inst {
         // binary operation
         Bin { l: Ref, r: Ref },
         PlNode {
-            // reference to the node creating this instruction
-            node: node::Index,
             // index into extra where payload is stored
             pl: extra::Index,
-        }
+            // reference to the node creating this instruction
+            node: node::Index,
+        },
+        UnaryNode {
+            operand: Link,
+            node: node::Index,
+        },
+        UnaryToken {
+            operand: Link,
+            token: token::Index,
+        },
+        Node {
+            // reference to the node creating this instruction
+            node: node::Index,
+        },
     }
 
     #[derive(Debug, PartialEq, Clone, Copy)]
@@ -212,6 +235,12 @@ pub mod inst {
         }
     }
 
+    impl From<u32> for Index {
+        fn from(value: u32) -> Index {
+            Index(value)
+        }
+    }
+
     impl From<Index> for u32 {
         fn from(value: Index) -> u32 {
             value.0
@@ -223,6 +252,12 @@ pub mod inst {
 
         fn add(self, rhs: u32) -> Index {
             Index(self.0 + rhs)
+        }
+    }
+
+    impl Into<extra::Data> for Index {
+        fn into(self) -> extra::Data {
+            extra::Data::from(self.0)
         }
     }
 
@@ -245,6 +280,53 @@ pub mod inst {
     pub struct Binary {
         pub lref: Link,
         pub rref: Link,
+    }
+    
+    #[derive(ExtraData)]
+    pub struct Block {
+        pub len: u32,
+    }
+
+    #[derive(ExtraData)]
+    pub struct Call {
+        pub addr: Link,
+        pub args_len: u32,
+    }
+    
+    #[derive(ExtraData)]
+    pub struct Param {
+        pub name: u32,
+        pub ty: Link,
+    }
+
+    #[derive(ExtraData)]
+    pub struct Store {
+        pub addr: Index,
+        pub val: Link,
+    }
+
+    #[derive(ExtraData)]
+    pub struct BranchSingle {
+        pub condition: Link,
+        pub exec_true: Index,
+    }
+
+    #[derive(ExtraData)]
+    pub struct BranchDouble {
+        pub condition: Link,
+        pub exec_true: Index,
+        pub exec_false: Index,
+    }
+
+    #[derive(ExtraData)]
+    pub struct Loop {
+        pub condition: Link,
+        pub body: Index,
+    }
+
+    #[derive(ExtraData)]
+    pub struct Module {
+        pub len: u32,
     }
 }
 
